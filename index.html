@@ -1,1 +1,406 @@
+import { useState, useEffect } from 'react';
 
+const CravingTracker = () => {
+  const [view, setView] = useState('home');
+  const [cravings, setCravings] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [currentStreak, setCurrentStreak] = useState(0);
+  const [longestStreak, setLongestStreak] = useState(0);
+  const [showAllOptions, setShowAllOptions] = useState(false);
+  const [formData, setFormData] = useState({
+    food: '',
+    cravingRating: 5,
+    hungerRating: 5,
+    cravingType: '',
+    emotion: [],
+    location: '',
+    action: ''
+  });
+
+  const emotions = ['Stressed', 'Bored', 'Tired', 'Hungry', 'Happy', 'Anxious'];
+  const locations = ['Home', 'Work', 'Car', 'Restaurant', 'Grocery Store', 'Other'];
+  const actions = [
+    { value: 'resisted', label: 'Resisted Completely' },
+    { value: 'planned', label: 'Had Planned Portion' },
+    { value: 'more', label: 'Had More Than Planned' },
+    { value: 'binge', label: 'Full Binge' }
+  ];
+  const cravingTypes = ['Sweet', 'Salty', 'Crunchy', 'Creamy', 'Other'];
+
+  useEffect(() => {
+    const stored = localStorage.getItem('cravings');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      setCravings(parsed);
+      calculateStreaks(parsed);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (cravings.length > 0) {
+      localStorage.setItem('cravings', JSON.stringify(cravings));
+      calculateStreaks(cravings);
+    }
+  }, [cravings]);
+
+  const calculateStreaks = (data) => {
+    if (data.length === 0) return;
+    const successfulActions = ['resisted', 'planned'];
+    let current = 0;
+    let longest = 0;
+    let temp = 0;
+    
+    for (let entry of data) {
+      if (successfulActions.includes(entry.action)) {
+        temp++;
+        if (temp > longest) longest = temp;
+        current = temp;
+      } else {
+        temp = 0;
+      }
+    }
+    setCurrentStreak(current);
+    setLongestStreak(longest);
+  };
+
+  const handleSubmit = () => {
+    if (!formData.cravingType || !formData.location || !formData.action) {
+      alert('Please fill in required fields: Craving Type, Location, and Action');
+      return;
+    }
+    
+    const newCraving = { 
+      id: Date.now(), 
+      ...formData,
+      datetime: new Date().toISOString() 
+    };
+    
+    const updatedCravings = [...cravings, newCraving];
+    setCravings(updatedCravings);
+    localStorage.setItem('cravings', JSON.stringify(updatedCravings));
+    
+    setView('intervention');
+    setShowForm(false);
+    setShowAllOptions(false);
+    setFormData({ 
+      food: '', 
+      cravingRating: 5, 
+      hungerRating: 5, 
+      cravingType: '',
+      emotion: [], 
+      location: '', 
+      action: '' 
+    });
+  };
+
+  const toggleEmotion = (emotion) => {
+    setFormData(prev => ({
+      ...prev,
+      emotion: prev.emotion.includes(emotion) ? prev.emotion.filter(e => e !== emotion) : [...prev.emotion, emotion]
+    }));
+  };
+
+  const getLocationOptions = (location) => {
+    const opts = {
+      'Car': ['Protein bar (150-250 cal)', 'Jerky (1-1.5 oz)', 'Nuts (1/4 cup)', 'Apple with nut butter'],
+      'Work': ['Greek yogurt with berries', 'Cottage cheese', 'Hummus with veggies', 'String cheese + fruit'],
+      'Home': ['Hard-boiled eggs + fruit', 'Air-popped popcorn', 'Apple with nut butter', 'Whole-grain toast'],
+      'Restaurant': ['Grilled chicken with veggies', 'Side salad with protein', 'Half burrito bowl', 'Soup + salad'],
+      'Other': ['Handful of nuts', 'Fresh fruit', 'String cheese', 'Water first, wait 10 min']
+    };
+    return opts[location] || opts['Other'];
+  };
+
+  const getStrategy = (cravingRating, hungerRating, cravingType, location) => {
+    if (cravingRating <= 3) {
+      return {
+        title: 'Low Craving - Try Waiting',
+        message: 'Your craving is mild. Try waiting it out!',
+        strategies: ['Set 10-minute timer', 'Drink 16 oz water', 'Take a quick walk', 'Listen to music'],
+        explanation: 'Mild cravings often pass with distraction.'
+      };
+    } else if (cravingRating <= 6) {
+      return {
+        title: 'Medium Craving - Healthier Swap',
+        message: `Based on ${location}:`,
+        strategies: getLocationOptions(location),
+        explanation: 'These satisfy cravings under 250 calories.',
+        showAll: true
+      };
+    } else {
+      if (hungerRating >= 6) {
+        return {
+          title: 'Strong Craving + Hungry - Balanced Meal',
+          message: 'You are hungry. Eat a balanced meal.',
+          strategies: ['Grilled protein with veggies', 'Salmon with brown rice', 'Large salad with protein', 'Turkey wrap'],
+          explanation: 'Eat nutritious meal with protein, fiber, healthy fats.'
+        };
+      } else {
+        return {
+          title: 'Strong Craving - Mindful Treat',
+          message: 'Have small portioned treat mindfully.',
+          strategies: ['2 squares dark chocolate', '1/2 cup ice cream', '2 cookies (portioned)', 'Small candy serving'],
+          explanation: 'Eat slowly, no distractions, savor each bite.',
+          mindful: ['Sit at table', 'Put away phone', 'Chew slowly', 'Pause halfway']
+        };
+      }
+    }
+  };
+
+  const exportCSV = () => {
+    const headers = ['Date', 'Time', 'Type', 'Craving', 'Hunger', 'Location', 'Action'];
+    const rows = cravings.map(c => {
+      const d = new Date(c.datetime);
+      return [d.toLocaleDateString(), d.toLocaleTimeString(), c.cravingType, c.cravingRating, c.hungerRating, c.location, c.action];
+    });
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cravings-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  const isValid = formData.cravingType && formData.location && formData.action;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <h1 className="text-3xl font-bold text-indigo-900 mb-2">Craving Control Tracker</h1>
+          <p className="text-gray-600">Take control of your cravings</p>
+          <div className="grid grid-cols-3 gap-4 mt-6">
+            <div className="bg-green-500 rounded-lg p-4 text-white">
+              <p className="text-sm">Current Streak</p>
+              <p className="text-3xl font-bold">{currentStreak} days</p>
+            </div>
+            <div className="bg-purple-500 rounded-lg p-4 text-white">
+              <p className="text-sm">Longest Streak</p>
+              <p className="text-3xl font-bold">{longestStreak} days</p>
+            </div>
+            <div className="bg-blue-500 rounded-lg p-4 text-white">
+              <p className="text-sm">Total Logged</p>
+              <p className="text-3xl font-bold">{cravings.length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-lg p-4 mb-6">
+          <div className="flex gap-2">
+            <button onClick={() => setView('home')} className={`px-6 py-2 rounded-lg font-medium ${view === 'home' ? 'bg-indigo-600 text-white' : 'bg-gray-200'}`}>
+              Home
+            </button>
+            <button onClick={() => setView('history')} className={`px-6 py-2 rounded-lg font-medium ${view === 'history' ? 'bg-indigo-600 text-white' : 'bg-gray-200'}`}>
+              History
+            </button>
+            <button onClick={() => setShowForm(true)} className="ml-auto px-6 py-2 bg-green-600 text-white rounded-lg font-medium">
+              + Log Craving
+            </button>
+          </div>
+        </div>
+
+        {view === 'home' && (
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-2xl font-bold mb-4">Welcome Back!</h2>
+            {cravings.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="mb-4">No cravings logged yet</p>
+                <button onClick={() => setShowForm(true)} className="px-6 py-3 bg-indigo-600 text-white rounded-lg">
+                  Log First Craving
+                </button>
+              </div>
+            ) : (
+              <div>
+                <h3 className="text-xl font-semibold mb-3">Recent Activity</h3>
+                {cravings.slice(-5).reverse().map(c => (
+                  <div key={c.id} className="border rounded-lg p-4 mb-2">
+                    <div className="flex justify-between">
+                      <div>
+                        <p className="font-semibold">{c.cravingType}</p>
+                        <p className="text-sm text-gray-600">{new Date(c.datetime).toLocaleString()}</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-sm ${c.action === 'resisted' ? 'bg-green-100 text-green-700' : c.action === 'planned' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                        {actions.find(a => a.value === c.action)?.label}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {view === 'intervention' && cravings.length > 0 && (() => {
+          const last = cravings[cravings.length - 1];
+          const strategy = getStrategy(last.cravingRating, last.hungerRating, last.cravingType, last.location);
+          return (
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              <div className="bg-indigo-600 text-white rounded-lg p-6 mb-6">
+                <h2 className="text-2xl font-bold mb-2">{strategy.title}</h2>
+                <p className="text-lg">{strategy.message}</p>
+                <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+                  <div className="bg-white bg-opacity-20 rounded p-2">
+                    <p>Craving: {last.cravingRating}/10</p>
+                  </div>
+                  <div className="bg-white bg-opacity-20 rounded p-2">
+                    <p>Hunger: {last.hungerRating}/10</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6 mb-6">
+                <h3 className="font-semibold mb-2">Why This Strategy?</h3>
+                <p>{strategy.explanation}</p>
+              </div>
+
+              <div className="bg-green-50 rounded-lg p-6 mb-6">
+                <h3 className="font-semibold mb-3">Recommended Actions:</h3>
+                {strategy.strategies.slice(0, showAllOptions ? undefined : 5).map((s, i) => (
+                  <div key={i} className="bg-white p-3 rounded mb-2">
+                    <span className="text-green-600 font-bold">{i + 1}.</span> {s}
+                  </div>
+                ))}
+                {strategy.strategies.length > 5 && (
+                  <button onClick={() => setShowAllOptions(!showAllOptions)} className="w-full mt-2 px-4 py-2 bg-green-600 text-white rounded-lg">
+                    {showAllOptions ? 'Show Less' : `Show All ${strategy.strategies.length} Options`}
+                  </button>
+                )}
+              </div>
+
+              {strategy.mindful && (
+                <div className="bg-purple-50 border-l-4 border-purple-500 rounded-lg p-6 mb-6">
+                  <h3 className="font-semibold mb-3">Mindful Eating Tips:</h3>
+                  {strategy.mindful.map((tip, i) => (
+                    <p key={i} className="mb-1">→ {tip}</p>
+                  ))}
+                </div>
+              )}
+
+              <button onClick={() => setView('home')} className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg">
+                Back to Home
+              </button>
+            </div>
+          );
+        })()}
+
+        {view === 'history' && (
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="flex justify-between mb-4">
+              <h2 className="text-2xl font-bold">History ({cravings.length})</h2>
+              <button onClick={exportCSV} className="px-4 py-2 bg-green-600 text-white rounded-lg">
+                Export CSV
+              </button>
+            </div>
+            {cravings.length === 0 ? (
+              <p className="text-center py-8">No cravings logged</p>
+            ) : (
+              <div>
+                {[...cravings].reverse().map(c => (
+                  <div key={c.id} className="border rounded-lg p-4 mb-3">
+                    <div className="flex justify-between">
+                      <div>
+                        <p className="font-semibold">{c.cravingType}</p>
+                        <p className="text-sm text-gray-600">{new Date(c.datetime).toLocaleString()}</p>
+                        <p className="text-sm">Craving: {c.cravingRating}/10 | Hunger: {c.hungerRating}/10</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-sm h-fit ${c.action === 'resisted' ? 'bg-green-100 text-green-700' : c.action === 'planned' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                        {actions.find(a => a.value === c.action)?.label}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {showForm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 z-50" onClick={() => setShowForm(false)}>
+            <div className="bg-white rounded-lg shadow-xl w-[80%] max-w-xl h-[75vh] overflow-y-auto flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-indigo-600 text-white p-4 flex justify-between items-center sticky top-0 z-10">
+                <h2 className="text-xl font-bold">Log Craving</h2>
+                <button 
+                  onClick={() => setShowForm(false)} 
+                  className="text-white hover:bg-indigo-700 rounded-full w-8 h-8 flex items-center justify-center text-2xl font-bold transition"
+                  title="Close"
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+                <div>
+                  <label className="block font-medium mb-1">Craving Type *</label>
+                  <select value={formData.cravingType} onChange={(e) => setFormData({...formData, cravingType: e.target.value})} className="w-full px-3 py-2 border-2 rounded-lg">
+                    <option value="">Select...</option>
+                    {cravingTypes.map(t => (<option key={t} value={t}>{t}</option>))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-medium mb-1">Specific Food (optional)</label>
+                  <input type="text" value={formData.food} onChange={(e) => setFormData({...formData, food: e.target.value})} className="w-full px-3 py-2 border-2 rounded-lg" placeholder="e.g., chocolate" />
+                </div>
+                
+                <div>
+                  <label className="block font-medium mb-1">Craving: {formData.cravingRating}/10</label>
+                  <input type="range" min="1" max="10" value={formData.cravingRating} onChange={(e) => setFormData({...formData, cravingRating: parseInt(e.target.value)})} className="w-full" />
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Mild (1-3)</span>
+                    <span>Medium (4-6)</span>
+                    <span>Strong (7-10)</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-medium mb-1">Hunger: {formData.hungerRating}/10</label>
+                  <input type="range" min="1" max="10" value={formData.hungerRating} onChange={(e) => setFormData({...formData, hungerRating: parseInt(e.target.value)})} className="w-full" />
+                </div>
+                
+                <div>
+                  <label className="block font-medium mb-1">Emotions (optional)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {emotions.map(e => (
+                      <button key={e} type="button" onClick={() => toggleEmotion(e)} className={`px-3 py-2 rounded-lg text-sm ${formData.emotion.includes(e) ? 'bg-purple-600 text-white' : 'bg-gray-200'}`}>
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block font-medium mb-1">Location *</label>
+                  <select value={formData.location} onChange={(e) => setFormData({...formData, location: e.target.value})} className="w-full px-3 py-2 border-2 rounded-lg">
+                    <option value="">Select...</option>
+                    {locations.map(l => (<option key={l} value={l}>{l}</option>))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block font-medium mb-2">Action Taken *</label>
+                  {actions.map(a => (
+                    <button key={a.value} type="button" onClick={() => setFormData({...formData, action: a.value})} className={`w-full px-4 py-2 rounded-lg mb-2 border-2 ${formData.action === a.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-gray-300'}`}>
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="sticky bottom-0 bg-white border-t-2 border-gray-300 p-4 z-10">
+                <button onClick={handleSubmit} disabled={!isValid} className={`w-full px-6 py-4 rounded-lg font-bold text-xl shadow-xl transition ${isValid ? 'bg-green-600 hover:bg-green-700 text-white cursor-pointer' : 'bg-gray-400 text-gray-600 cursor-not-allowed'}`}>
+                  {isValid ? '✓ SUBMIT CRAVING' : '⚠ FILL REQUIRED FIELDS'}
+                </button>
+                <p className="text-center text-sm text-gray-600 mt-2">
+                  Required: Type, Location, Action
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default CravingTracker;
